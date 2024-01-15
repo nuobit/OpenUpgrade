@@ -92,7 +92,7 @@ def _compute_stock_location_replenish_location(env):
             END as replenish_location_status
             FROM stock_location sl
             LEFT JOIN stock_warehouse sw
-            ON sw.id = sl.warehouse_id
+            ON sw.lot_stock_id = sl.id
         )
         UPDATE stock_location sl
         SET replenish_location = info.replenish_location_status
@@ -121,10 +121,10 @@ def _update_stock_quant_package_pack_date(env):
 
 @openupgrade.migrate()
 def migrate(env, version):
-    openupgrade.rename_tables(env.cr, _tables_renames)
-    openupgrade.rename_models(env.cr, _models_renames)
-    openupgrade.rename_fields(env, _fields_renames)
     openupgrade.rename_columns(env.cr, _columns_renames)
+    openupgrade.rename_fields(env, _fields_renames)
+    openupgrade.rename_models(env.cr, _models_renames)
+    openupgrade.rename_tables(env.cr, _tables_renames)
     _update_stock_quant_storage_category_id(env)
     _update_stock_quant_package_pack_date(env)
     _update_sol_product_category_name(env)
