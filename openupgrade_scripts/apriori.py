@@ -99,6 +99,8 @@ merged_modules = {
     # OCA/product-attribute
     "stock_account_product_cost_security": "product_cost_security",
     "product_sale_tax_price_included": "account",
+    # OCA/queue
+    "queue_job_context": "queue_job",
     # OCA/server-tools
     "base_jsonify": "jsonifier",
     # OCA/server-ux
