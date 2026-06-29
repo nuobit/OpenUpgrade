@@ -48,6 +48,8 @@ renamed_modules = {
     # OCA/web
     "web_widget_product_label_section_and_note": "web_widget_product_label_section_and_note_name_visibility",  # noqa: E501
     # OCA/...
+    # a customer's private repository
+    "oxigen_ptplus_extension": "oxigen_ptplus",
 }
 
 # Merged modules contain a mapping from old module names to other,
