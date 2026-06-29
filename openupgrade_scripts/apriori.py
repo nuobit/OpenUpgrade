@@ -48,6 +48,8 @@ renamed_modules = {
     # OCA/web
     "web_widget_product_label_section_and_note": "web_widget_product_label_section_and_note_name_visibility",  # noqa: E501
     # OCA/...
+    # oxigensalud/odoo-addons-private
+    "oxigen_ptplus_extension": "oxigen_ptplus",
 }
 
 # Merged modules contain a mapping from old module names to other,
