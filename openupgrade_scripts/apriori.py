@@ -51,6 +51,7 @@ renamed_modules = {
     # oxigensalud/odoo-addons-private
     "oxigen_ptplus_extension": "oxigen_ptplus",
     "oxigen_ptplus_partner_extension": "oxigen_ptplus_partner",
+    "oxigen_ptplus_sale_extension": "oxigen_ptplus_sale",
 }
 
 # Merged modules contain a mapping from old module names to other,
