@@ -62,8 +62,6 @@ merged_modules = {
     "l10n_es_irnr_sii": "l10n_es_aeat_sii_oca",
     # OCA/maintenance
     "base_maintenance_config": "maintenance",
-    "maintenance_plan": "maintenance",
-    "maintenance_plan_activity": "maintenance",
     "maintenance_plan_employee": "maintenance",
     # OCA/product-attribute
     "product_catalog": "product",
