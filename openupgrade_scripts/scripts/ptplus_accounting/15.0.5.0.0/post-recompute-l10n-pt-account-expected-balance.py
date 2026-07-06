@@ -6,7 +6,10 @@ _logger = logging.getLogger(__name__)
 
 # Kept small so each browse+compute+flush cycle stays within the container
 # memory budget: the cache is dropped between chunks (invalidate_cache), so
-# peak memory is one chunk, not the whole table.
+# peak memory is one chunk, not the whole table. No commit inside the loop:
+# @openupgrade.migrate() wraps the script in a savepoint (a commit would
+# destroy it -> RELEASE SAVEPOINT crashes on exit) and the module upgrade
+# must stay transactional; flushed rows live in the module's transaction.
 CHUNK = 5000
 
 
@@ -32,7 +35,6 @@ def _batched_recompute(env, model_name, fname):
         recs = model.browse(ids[start : start + CHUNK])
         env.add_to_compute(field, recs)
         recs.flush([fname], recs)
-        env.cr.commit()
         recs.invalidate_cache()
         if start and start % (CHUNK * 20) == 0:
             _logger.info("  ... %s/%s", start, total)
