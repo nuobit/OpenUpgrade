@@ -25,30 +25,32 @@ def _fill_payment_state(env):
             aat.type = 'payable'
         """,
     )
-    # Disable fiscalyear_lock_date and reconciliation checks: the recompute
-    # below writes on posted expense moves, and on reconciled ones the
-    # amount_total inverse would otherwise raise "You cannot do this
-    # modification on a reconciled journal entry"
-    _check_fiscalyear_lock_date = env[
-        "account.move"
-    ].__class__._check_fiscalyear_lock_date
-    _check_reconciliation = env["account.move.line"].__class__._check_reconciliation
-    env["account.move"].__class__._check_fiscalyear_lock_date = lambda self: None
-    env["account.move.line"].__class__._check_reconciliation = lambda self: None
     # Recompute several fields (always_tax_exigible, amount_residual,
     # amount_residual_signed, amount_untaxed, amount_untaxed_signed,
     # payment_state) for the moves associated to the expenses, as on v14 these
     # ones were not computed being of type `entry`, which changes now on v15
     # if the method `_payment_state_matters` returns True, which is the case
-    # for the expense moves
-    env["account.move"].with_context(active_test=False, tracking_disable=True).search(
+    # for the expense moves.
+    #
+    # The compute MUST run under env.protecting(): called bare, every
+    # assignment inside _compute_amount() goes through Field.__set__ ->
+    # write(), which triggers _inverse_amount_total and REWRITES the
+    # debit/credit of reconciled 2-line expense moves (zeroing them when the
+    # recomputed amount_total is 0). Disabling the reconciliation check (the
+    # 4ac3a169 approach) silently persists that corruption instead of
+    # crashing on it. Protected, the assignments land in the cache and
+    # flush() persists them by SQL: amounts follow the lines, never the
+    # other way around, and no lock-date or reconciliation check fires.
+    AccountMove = env["account.move"]
+    moves = AccountMove.with_context(active_test=False, tracking_disable=True).search(
         [("line_ids.expense_id", "!=", False)]
-    )._compute_amount()
-    # Enable fiscalyear_lock_date and reconciliation checks
-    env["account.move"].__class__._check_fiscalyear_lock_date = (
-        _check_fiscalyear_lock_date
     )
-    env["account.move.line"].__class__._check_reconciliation = _check_reconciliation
+    fields_amount = [
+        f for f in AccountMove._fields.values() if f.compute == "_compute_amount"
+    ]
+    with env.protecting(fields_amount, moves):
+        moves._compute_amount()
+    AccountMove.flush([f.name for f in fields_amount], moves)
 
 
 @openupgrade.migrate()
