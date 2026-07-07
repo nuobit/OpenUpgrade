@@ -207,6 +207,43 @@ def fill_repair_picking_type(env):
         WHERE ro.location_id = sl.id
         """,
     )
+    # OU-FIX: the UPDATE above only covers repairs whose location_id belongs
+    # to a warehouse (stock_location.warehouse_id). Repairs on standalone
+    # locations (workshop locations outside any warehouse hierarchy,
+    # customer/transit/virtual locations) keep referencing the temporary
+    # location/picking type created in pre-migration, and the unlink below
+    # crashes: the FK ON DELETE SET NULL collides with the NOT NULL the ORM
+    # added for these required fields. Fall back per company to its first
+    # active warehouse's repair type.
+    tmp_picking_types = env["stock.picking.type"].search(
+        [("name", "=", "SPT Repair OpenUpgrade")]
+    )
+    if tmp_picking_types:
+        openupgrade.logged_query(
+            env.cr,
+            """
+            UPDATE repair_order ro
+            SET picking_type_id = sub.repair_type_id,
+                location_dest_id = sub.default_location_dest_id,
+                parts_location_id = sub.default_remove_location_dest_id,
+                recycle_location_id = sub.default_recycle_location_dest_id
+            FROM (
+                SELECT DISTINCT ON (sw.company_id)
+                    sw.company_id,
+                    sw.repair_type_id,
+                    spt.default_location_dest_id,
+                    spt.default_remove_location_dest_id,
+                    spt.default_recycle_location_dest_id
+                FROM stock_warehouse sw
+                JOIN stock_picking_type spt ON spt.id = sw.repair_type_id
+                WHERE sw.repair_type_id IS NOT NULL
+                ORDER BY sw.company_id, sw.active DESC, sw.id
+            ) sub
+            WHERE sub.company_id = ro.company_id
+              AND ro.picking_type_id IN %(tmp_ids)s
+            """,
+            {"tmp_ids": tuple(tmp_picking_types.ids)},
+        )
     # Remove the temporary location and picking type
     # created during the migration
     env["stock.location"].search(
