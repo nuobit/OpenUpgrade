@@ -2,7 +2,7 @@
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl).
 from openupgradelib import openupgrade
 
-from odoo import api, models
+from odoo import api, fields, models
 
 from odoo.addons.base.models.ir_model import (
     IrModel,
@@ -74,14 +74,22 @@ IrModelRelation._module_data_uninstall = _module_data_uninstall
 
 
 def _process_ondelete(self):
-    """Don't break on missing models when deleting their selection fields"""
+    """Don't break on missing models, missing fields or fields that are no
+    longer Selection fields when deleting their selection values"""
     to_process = self.browse([])
     for selection in self:
         try:
-            self.env[selection.field_id.model]  # pylint: disable=pointless-statement
-            to_process += selection
+            model = self.env[selection.field_id.model]
         except KeyError:
             continue
+        field = model._fields.get(selection.field_id.name)
+        if field is None or not isinstance(field, fields.Selection):
+            # The field vanished or changed type between versions (e.g.
+            # selection -> boolean, or reference-field selection rows that
+            # became orphans): the ondelete machinery no longer applies,
+            # just let the record be unlinked.
+            continue
+        to_process += selection
     return IrModelSelection._process_ondelete._original_method(to_process)
 
 
