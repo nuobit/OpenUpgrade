@@ -27,6 +27,32 @@ def _fix_list_view_type(cr):
     openupgrade.logged_query(cr, "UPDATE ir_ui_view SET type='list' WHERE type='tree'")
 
 
+def _align_extension_view_types(cr):
+    """
+    Align extension views' type with their parent view's type.
+
+    Old databases carry extension views (mode='extension') whose stored type
+    doesn't match their parent's: older Odoo versions stored a wrong
+    derivation (e.g. the 'form' default on a list-view extension) and never
+    validated it. Odoo 18 validates the resolved arch root against ``type``
+    on every module update, turning each of these rows into a hard
+    ParseError. The invariant an extension view must satisfy is simply "same
+    type as its parent" - enforce it. Run after the tree->list rename so the
+    alignment lands on the renamed values.
+    """
+    openupgrade.logged_query(
+        cr,
+        """
+        UPDATE ir_ui_view c
+        SET type = p.type
+        FROM ir_ui_view p
+        WHERE c.inherit_id = p.id
+          AND c.mode = 'extension'
+          AND c.type != p.type
+        """,
+    )
+
+
 def _fix_list_view_mode(cr):
     """
     Previous actions had a default value of tree,form, but now the default is list,form.
@@ -92,6 +118,7 @@ def migrate(cr, version):
         table="ir_act_window_view",
     )
     _fix_list_view_type(cr)
+    _align_extension_view_types(cr)
     _fix_list_view_mode(cr)
     _fix_serbian_res_lang_record(cr)
     _fix_company_layout_background(cr)
