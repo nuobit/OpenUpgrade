@@ -102,6 +102,27 @@ def _inverse_arch(self):
     return _inverse_arch._original_method(self)
 
 
+def unlink(self):
+    """Let the ``_force_unlink`` child cascade see INACTIVE inherited views.
+
+    Core's ``View.unlink`` reads ``inherit_children_ids`` with ``active_test``
+    enabled, so an inactive child view is never cascaded away. The parent's
+    DELETE then hits the ``inherit_id`` RESTRICT foreign key, is logged as a
+    benign "bad query", and the parent survives ORPHANED -- the obsolete view
+    is never swept, not even by a later ``-u all``.
+
+    Hit at 16.0->17.0: ``website_sale.payment_footer`` (dropped from core in
+    17.0) survived because its child ``website_sale.payment_sale_note`` is
+    ``active="False"`` and so was skipped by the cascade.
+    """
+    if self.env.context.get("_force_unlink", False):
+        # Needs to override the context so the cascade sees inactive children
+        self = self.with_context(  # pylint: disable=context-overridden
+            active_test=False
+        )
+    return View.unlink._original_method(self)
+
+
 _check_xml._original_method = View._check_xml
 View._check_xml = _check_xml
 check._original_method = NameManager.check
@@ -112,3 +133,5 @@ _check_field_paths._original_method = View._check_field_paths
 View._check_field_paths = _check_field_paths
 _inverse_arch._original_method = View._inverse_arch
 View._inverse_arch = _inverse_arch
+unlink._original_method = View.unlink
+View.unlink = unlink
