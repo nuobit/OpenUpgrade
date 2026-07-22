@@ -4,12 +4,18 @@ from openupgradelib import openupgrade
 
 
 def fill_stock_picking_type_default_locations(env):
-    picking_types = env["stock.picking.type"].search(
-        [("default_location_src_id", "=", False)]
+    # active_test=False: archived picking types need the fill too, otherwise
+    # the SET NOT NULL on both columns (required since 18.0) keeps failing
+    picking_types = (
+        env["stock.picking.type"]
+        .with_context(active_test=False)
+        .search([("default_location_src_id", "=", False)])
     )
     picking_types._compute_default_location_src_id()
-    picking_types = env["stock.picking.type"].search(
-        [("default_location_dest_id", "=", False)]
+    picking_types = (
+        env["stock.picking.type"]
+        .with_context(active_test=False)
+        .search([("default_location_dest_id", "=", False)])
     )
     picking_types._compute_default_location_dest_id()
 
