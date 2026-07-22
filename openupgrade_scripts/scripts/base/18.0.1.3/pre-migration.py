@@ -64,10 +64,15 @@ def _fix_company_layout_background(cr):
 
 @openupgrade.migrate(use_env=False)
 def migrate(cr, version):
+    # IF NOT EXISTS: on a resumed run (crash after this script's work was
+    # committed but before base's version bump) the table already holds the
+    # correct pre-upgrade snapshot — recreating it here would either crash
+    # (DuplicateTable) or, worse, recapture states with the renames/merges
+    # below already applied. Keep the first capture.
     openupgrade.logged_query(
         cr,
         f"""
-        CREATE TABLE {openupgrade.get_legacy_name("ir_module_module")
+        CREATE TABLE IF NOT EXISTS {openupgrade.get_legacy_name("ir_module_module")
             } AS (SELECT name, state FROM ir_module_module);
         """,
     )
@@ -79,10 +84,15 @@ def migrate(cr, version):
     )
     openupgrade.clean_transient_models(cr)
     openupgrade.rename_xmlids(cr, _renamed_xmlids)
-    openupgrade.copy_columns(
-        cr,
-        {"ir_act_window_view": [("view_mode", None, None)]},
-    )
+    # Same resume story as the snapshot table above: the legacy column may
+    # already exist (and be filled) from a previously committed attempt.
+    if not openupgrade.column_exists(
+        cr, "ir_act_window_view", openupgrade.get_legacy_name("view_mode")
+    ):
+        openupgrade.copy_columns(
+            cr,
+            {"ir_act_window_view": [("view_mode", None, None)]},
+        )
     old_column = openupgrade.get_legacy_name("view_mode")
     openupgrade.map_values(
         cr,
