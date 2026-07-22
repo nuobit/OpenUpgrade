@@ -14,44 +14,43 @@ def _fill_payment_state(env):
     openupgrade.logged_query(
         env.cr,
         """
-        UPDATE account_move_line
-        SET exclude_from_invoice_tab=(coalesce(quantity, 0) = 0)
-        WHERE expense_id IS NOT NULL
+        UPDATE account_move_line AS aml
+        SET exclude_from_invoice_tab = true
+        FROM account_account AS aa
+        INNER JOIN account_account_type AS aat ON
+            aa.user_type_id = aat.id
+        WHERE
+            aml.account_id = aa.id AND
+            aml.expense_id IS NOT NULL AND
+            aat.type = 'payable'
         """,
     )
-    # Recompute payment_state for the moves associated to the expenses, as on
-    # v14 these ones were not computed being of type `entry`, which changes now
-    # on v15 if the method `_payment_state_matters` returns True, which is the
-    # case for the expense moves
-    for move in env["hr.expense.sheet"].search([]).account_move_id:
-        # Extracted and adapted from _compute_amount() in account.move
-        new_pmt_state = "not_paid" if move.move_type != "entry" else False
-        total_to_pay = total_residual = 0.0
-        for line in move.line_ids:
-            if line.account_id.user_type_id.type in ("receivable", "payable"):
-                total_to_pay += line.balance
-                total_residual += line.amount_residual
-        currencies = move._get_lines_onchange_currency().currency_id
-        currency = currencies if len(currencies) == 1 else move.company_id.currency_id
-        if currency.is_zero(move.amount_residual):
-            reconciled_payments = move._get_reconciled_payments()
-            if not reconciled_payments or all(
-                payment.is_matched for payment in reconciled_payments
-            ):
-                new_pmt_state = "paid"
-            else:
-                new_pmt_state = move._get_invoice_in_payment_state()
-        elif currency.compare_amounts(total_to_pay, total_residual) != 0:
-            new_pmt_state = "partial"
-        openupgrade.logged_query(
-            env.cr,
-            """
-            UPDATE account_move
-            SET payment_state = %s
-            WHERE id = %s
-            """,
-            (new_pmt_state, move.id),
-        )
+    # Recompute several fields (always_tax_exigible, amount_residual,
+    # amount_residual_signed, amount_untaxed, amount_untaxed_signed,
+    # payment_state) for the moves associated to the expenses, as on v14 these
+    # ones were not computed being of type `entry`, which changes now on v15
+    # if the method `_payment_state_matters` returns True, which is the case
+    # for the expense moves.
+    #
+    # The compute MUST run under env.protecting(): called bare, every
+    # assignment inside _compute_amount() goes through Field.__set__ ->
+    # write(), which triggers _inverse_amount_total and REWRITES the
+    # debit/credit of reconciled 2-line expense moves (zeroing them when the
+    # recomputed amount_total is 0). Disabling the reconciliation check (the
+    # 4ac3a169 approach) silently persists that corruption instead of
+    # crashing on it. Protected, the assignments land in the cache and
+    # flush() persists them by SQL: amounts follow the lines, never the
+    # other way around, and no lock-date or reconciliation check fires.
+    AccountMove = env["account.move"]
+    moves = AccountMove.with_context(active_test=False, tracking_disable=True).search(
+        [("line_ids.expense_id", "!=", False)]
+    )
+    fields_amount = [
+        f for f in AccountMove._fields.values() if f.compute == "_compute_amount"
+    ]
+    with env.protecting(fields_amount, moves):
+        moves._compute_amount()
+    AccountMove.flush([f.name for f in fields_amount], moves)
 
 
 @openupgrade.migrate()
