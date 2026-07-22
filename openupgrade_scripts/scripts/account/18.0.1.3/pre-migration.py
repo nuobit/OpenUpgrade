@@ -39,6 +39,7 @@ _new_columns = [
     ("account.payment", "memo", "char"),
     ("account.payment", "state", "selection"),
     ("account.payment", "is_sent", "boolean"),
+    ("account.payment", "company_id", "many2one"),
     ("account.move", "made_sequence_gap", "boolean", True),
 ]
 
@@ -171,10 +172,10 @@ def fill_account_payment(env):
                         ELSE 'Draft Payment' END,
             date = am.date,
             journal_id = CASE WHEN ap.journal_id IS NULL
-                                AND aj.type in ('bank', 'cash', 'credit')
-                              THEN am.journal_id ELSE ap.journal_id END
+                              THEN am.journal_id ELSE ap.journal_id END,
+            company_id = CASE WHEN ap.company_id IS NULL
+                              THEN am.company_id ELSE ap.company_id END
         FROM account_move am
-        LEFT JOIN account_journal aj ON am.journal_id = aj.id
         WHERE ap.move_id = am.id""",
     )
 
