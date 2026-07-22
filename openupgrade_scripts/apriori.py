@@ -48,6 +48,16 @@ renamed_modules = {
     # OCA/web
     "web_widget_product_label_section_and_note": "web_widget_product_label_section_and_note_name_visibility",  # noqa: E501
     # OCA/...
+    # oxigensalud/odoo-addons-private
+    "oxigen_ptplus_extension": "oxigen_ptplus",
+    "oxigen_ptplus_partner_extension": "oxigen_ptplus_partner",
+    "oxigen_ptplus_sale_extension": "oxigen_ptplus_sale",
+    "oxigen_ptplus_stock_extension": "oxigen_ptplus_stock",
+    # exosoftware/pt-plus → oxigensalud/odoo-addons-private: the vendor asset
+    # module is retired at 18.0 (its 18.x successor is Enterprise-only); the CE
+    # replacement on the OCA account_asset_management stack takes over its
+    # installed state.
+    "ptplus_accounting_asset_management": "oxigen_ptplus_accounting_asset_management",  # noqa: E501
 }
 
 # Merged modules contain a mapping from old module names to other,
