@@ -171,10 +171,8 @@ def fill_account_payment(env):
                         ELSE 'Draft Payment' END,
             date = am.date,
             journal_id = CASE WHEN ap.journal_id IS NULL
-                                AND aj.type in ('bank', 'cash', 'credit')
                               THEN am.journal_id ELSE ap.journal_id END
         FROM account_move am
-        LEFT JOIN account_journal aj ON am.journal_id = aj.id
         WHERE ap.move_id = am.id""",
     )
 
