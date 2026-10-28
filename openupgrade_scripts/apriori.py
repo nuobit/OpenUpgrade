@@ -48,6 +48,8 @@ renamed_modules = {
     # OCA/web
     "web_widget_product_label_section_and_note": "web_widget_product_label_section_and_note_name_visibility",  # noqa: E501
     # OCA/...
+    # nuobit/odoo-addons
+    "connector_woocommerce_apg_nif": "connector_woocommerce_nif",
     # oxigensalud/odoo-addons-private
     "oxigen_ptplus_extension": "oxigen_ptplus",
     "oxigen_ptplus_partner_extension": "oxigen_ptplus_partner",
