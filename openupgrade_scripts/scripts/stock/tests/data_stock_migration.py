@@ -110,5 +110,27 @@ _add_done_line(delivery, delivery.move_ids.product_id, 1, delivery.move_ids)
 delivery = _delivery("ou17-empty-line", _product("OU17-EMPTY-LINE"), 1)
 delivery.do_unreserve()
 _add_done_line(delivery, delivery.move_ids.product_id, 0, delivery.move_ids)
+# a move cancelled after a quantity was done on its line, beside a reserved one
+delivery = _delivery(
+    "ou17-cancelled-done",
+    _product("OU17-CANCELLED-DONE") | _product("OU17-BESIDE-CANCELLED-DONE"),
+    1,
+)
+delivery.action_assign()
+cancelled = delivery.move_ids.filtered(
+    lambda move: move.product_id.default_code == "OU17-CANCELLED-DONE"
+)
+cancelled.move_line_ids.qty_done = 1
+cancelled._action_cancel()
+# an inventory applied with no difference, whose move is done with a line of nothing
+# done
+quant = env["stock.quant"].search(
+    [
+        ("product_id", "=", _product("OU17-INVENTORY-EQUAL").id),
+        ("location_id", "=", stock.id),
+    ]
+)
+quant.inventory_quantity = quant.quantity
+quant._apply_inventory()
 
 env.cr.commit()

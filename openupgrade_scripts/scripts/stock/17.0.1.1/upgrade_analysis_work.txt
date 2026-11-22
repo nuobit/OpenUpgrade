@@ -26,7 +26,11 @@ stock        / stock.lot                / rating_ids (one2many)         : NEW re
 # NOTHING TO DO
 
 stock        / stock.move               / move_line_nosuggest_ids (one2many): DEL relation: stock.move.line
+# NOTHING TO DO
+
 stock        / stock.move               / picked (boolean)              : NEW isfunction: function, stored
+# DONE: pre-migration: pre-filled, picked when one of its lines is
+
 stock        / stock.move               / picking_type_id (many2one)    : not a function anymore
 # NOTHING TO DO
 
@@ -45,6 +49,8 @@ stock        / stock.move.line          / quantity (float)              : NEW ha
 # DONE: pre-migration
 
 stock        / stock.move.line          / picked (boolean)              : NEW hasdefault: compute
+# DONE: pre-migration: pre-filled, picked on the moves not done nor cancelled when it had a quantity done
+
 stock        / stock.move.line          / quant_id (many2one)           : NEW relation: stock.quant
 # NOTHING TO DO
 

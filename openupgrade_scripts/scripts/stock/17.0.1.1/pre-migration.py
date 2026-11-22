@@ -74,7 +74,9 @@ def _prefill_sml_quantity_product_uom(env):
 def prefill_picked(env):
     """
     Pre-fill picked for stock moves and move lines to reduce ORM
-    recomputation during migration.
+    recomputation during migration. On the moves not done nor cancelled, it
+    marks the lines that had a quantity done in v16. The lines of a cancelled
+    move aren't picked, as v17 unpicks a move it cancels.
     """
     openupgrade.add_columns(
         env,
@@ -91,6 +93,7 @@ def prefill_picked(env):
         FROM stock_move sm
         WHERE sml.move_id = sm.id
           AND sm.state != 'done'
+          AND (sm.state = 'cancel' OR COALESCE(sml.qty_done, 0) = 0)
         """,
     )
     openupgrade.logged_query(
@@ -106,7 +109,7 @@ def prefill_picked(env):
             AND sm.id = sm2.id
         """,
     )
-    # Need to set sms picked to False when the related smls are not picked
+    # Need to set sms picked to False when none of the related smls is picked
     openupgrade.logged_query(
         env.cr,
         """
@@ -115,6 +118,10 @@ def prefill_picked(env):
         FROM stock_move_line sml
         WHERE sml.move_id = sm.id
           AND NOT sml.picked
+          AND NOT EXISTS (
+              SELECT 1 FROM stock_move_line sml2
+              WHERE sml2.move_id = sm.id AND sml2.picked
+          )
         """,
     )
 

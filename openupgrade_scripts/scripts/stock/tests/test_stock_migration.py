@@ -72,6 +72,57 @@ class TestStockMigration(TransactionCase):
             )
         )
 
+    def test_picked(self):
+        """
+        Test that on the moves not done nor cancelled a line is picked when it had a
+        quantity done, a move when one of its lines is, and that a cancelled move
+        and its lines aren't
+        """
+        for origin, picked in (
+            ("ou17-reserved", False),
+            ("ou17-done-equal", True),
+            ("ou17-done-more", True),
+            ("ou17-done-less", True),
+            ("ou17-done-unreserved", True),
+        ):
+            delivery = self._delivery(origin)
+            self.assertEqual(delivery.move_line_ids.picked, picked, origin)
+            self.assertEqual(delivery.move_ids.picked, picked, origin)
+        delivery = self._delivery("ou17-several-lines")
+        lines = delivery.move_line_ids.sorted("quantity")
+        self.assertEqual(lines.mapped("picked"), [True, False])
+        self.assertTrue(delivery.move_ids.picked)
+        cancelled = self._delivery("ou17-cancelled-done").move_ids.filtered(
+            lambda move: move.state == "cancel"
+        )
+        self.assertFalse(cancelled.picked)
+        self.assertFalse(cancelled.move_line_ids.picked)
+
+    def test_done_moves_picked(self):
+        """
+        Test that a done move and its lines stay picked and keep their quantity, the
+        move of an inventory applied with no difference included
+        """
+        move = self.env["stock.move"].search(
+            [
+                ("product_id.default_code", "=", "OU17-INVENTORY-EQUAL"),
+                ("is_inventory", "=", True),
+            ]
+        )
+        self.assertEqual(move.state, "done")
+        self.assertEqual(move.move_line_ids.quantity, 0)
+        self.assertTrue(move.picked)
+        self.assertTrue(move.move_line_ids.picked)
+
+    def test_validate_with_cancelled_moves(self):
+        """
+        Test that validating a picking where nothing was picked picks its open
+        moves, whatever was done on its cancelled ones
+        """
+        delivery = self._delivery("ou17-cancelled-done")
+        delivery.button_validate()
+        self.assertEqual(delivery.state, "done")
+
     def test_returned_picking(self):
         """
         Test that we correctly link returned pickings to their origin picking
