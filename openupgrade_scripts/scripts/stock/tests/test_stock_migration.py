@@ -1,6 +1,17 @@
+import importlib.util
+import os
+
 from odoo.tests import TransactionCase
 
 from odoo.addons.openupgrade_framework import openupgrade_test
+
+# the post-migration's own functions, called again by a test
+_spec = importlib.util.spec_from_file_location(
+    "stock_post_migration",
+    os.path.join(os.path.dirname(__file__), os.pardir, "17.0.1.1", "post-migration.py"),
+)
+post_migration = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(post_migration)
 
 
 @openupgrade_test
@@ -20,7 +31,8 @@ class TestStockMigration(TransactionCase):
     def test_open_line_quantity(self):
         """
         Test that an open line keeps its quantity done, never the sum with the
-        reserved one, and takes the reserved one when nothing was done
+        reserved one, and takes the reserved one when nothing was done, wherever it
+        is taken from
         """
         for origin, quantity in (
             ("ou17-reserved", 3),
@@ -30,6 +42,7 @@ class TestStockMigration(TransactionCase):
             ("ou17-done-unreserved", 2),
             ("ou17-other-unit", 1),
             ("ou17-partially-available", 100),
+            ("ou17-receipt", 5),
             ("ou17-empty-line", 0),
         ):
             self.assertEqual(
@@ -57,6 +70,11 @@ class TestStockMigration(TransactionCase):
             move = self._delivery(origin).move_ids
             self.assertEqual(move.quantity, quantity, origin)
             self.assertEqual(move.state, state, origin)
+        move = self._delivery("ou17-receipt").move_ids.filtered(
+            lambda move: move.product_id.default_code == "OU17-KILOGRAMS"
+        )
+        self.assertEqual(move.quantity, 5)
+        self.assertEqual(move.state, "assigned")
 
     def test_no_state_tracking(self):
         """
@@ -130,6 +148,142 @@ class TestStockMigration(TransactionCase):
             delivery = self._delivery(origin)
             delivery.button_validate()
             self.assertEqual(delivery.state, "done", origin)
+
+    def test_no_line_on_views(self):
+        """
+        Test that no line not done of a storable product is taken from a view
+        location, unless a quant there matches it, and that the inventory runs
+        """
+        quant_keys = {
+            (
+                quant.product_id,
+                quant.location_id,
+                quant.lot_id,
+                quant.package_id,
+                quant.owner_id,
+            )
+            for quant in self.env["stock.quant"].search(
+                [("location_id.usage", "=", "view")]
+            )
+        }
+        for line in self.env["stock.move.line"].search(
+            [
+                ("location_id.usage", "=", "view"),
+                ("state", "not in", ("done", "cancel")),
+                ("product_id.type", "=", "product"),
+            ]
+        ):
+            self.assertIn(
+                (
+                    line.product_id,
+                    line.location_id,
+                    line.lot_id,
+                    line.package_id,
+                    line.owner_id,
+                ),
+                quant_keys,
+                line.picking_id.origin,
+            )
+        self.assertFalse(self._delivery("ou17-view-lot").move_line_ids)
+        self.env["stock.quant"]._quant_tasks()
+
+    def test_view_lines_reserved_again(self):
+        """
+        Test that the moves of the lines removed from a view keep their demand, at
+        least what was done on them, one above it by less than its unit's rounding
+        included, a draft one stays draft, a waiting one waiting, one reserved in
+        part keeps its reservation, the migration reserves none of them, a receipt's
+        included, and they are reserved and done from stock
+        """
+        stock = self.env.ref("stock.stock_location_stock")
+        delivery = self._delivery("ou17-view")
+        self.assertFalse(delivery.move_line_ids)
+        self.assertEqual(delivery.move_ids.state, "confirmed")
+        delivery = self._delivery("ou17-view-whole-demand")
+        self.assertFalse(delivery.move_line_ids)
+        self.assertEqual(delivery.move_ids.product_uom_qty, 2.3)
+        delivery = self._delivery("ou17-view-draft")
+        self.assertEqual(delivery.move_line_ids.location_id, stock)
+        self.assertEqual(delivery.move_ids.quantity, 1)
+        self.assertEqual(delivery.move_ids.state, "draft")
+        delivery = self._delivery("ou17-view-partially")
+        self.assertEqual(delivery.move_line_ids.location_id, stock)
+        self.assertEqual(delivery.move_ids.quantity, 100)
+        self.assertEqual(delivery.move_ids.state, "partially_available")
+        delivery = self._delivery("ou17-small-waiting")
+        self.assertEqual(delivery.move_line_ids.location_id, stock)
+        self.assertEqual(delivery.move_ids.state, "waiting")
+        added = self._delivery("ou17-view-added").move_ids.filtered(
+            lambda move: move.product_id.default_code == "OU17-VIEW-ADDED"
+        )
+        self.assertFalse(added.move_line_ids)
+        self.assertEqual(added.product_uom_qty, 1)
+        receipt = self._delivery("ou17-receipt")
+        receipt_added = receipt.move_ids.filtered(
+            lambda move: move.product_id.default_code == "OU17-RECEIPT-VIEW-ADDED"
+        )
+        self.assertFalse(receipt_added.move_line_ids)
+        self.assertEqual(receipt_added.product_uom_qty, 1)
+        self.assertEqual(receipt_added.state, "confirmed")
+        for origin in (
+            "ou17-view",
+            "ou17-view-draft",
+            "ou17-view-added",
+            "ou17-view-partially",
+            "ou17-view-whole-demand",
+        ):
+            delivery = self._delivery(origin)
+            delivery.action_confirm()
+            delivery.action_assign()
+            delivery.with_context(skip_backorder=True).button_validate()
+            self.assertEqual(delivery.state, "done", origin)
+            self.assertEqual(
+                delivery.move_line_ids.mapped("location_id"), stock, origin
+            )
+        self.assertEqual(added.quantity, 1)
+        receipt.action_assign()
+        receipt.button_validate()
+        self.assertEqual(receipt.state, "done")
+        self.assertEqual(receipt_added.quantity, 1)
+
+    def test_view_consumable_line_kept(self):
+        """
+        Test that a consumable's line taken from a view keeps its quantity there, as
+        it reserves nothing on a quant, and its picking validates
+        """
+        delivery = self._delivery("ou17-view-consumable")
+        self.assertEqual(delivery.move_line_ids.location_id.usage, "view")
+        self.assertEqual(delivery.move_line_ids.quantity, 1)
+        delivery.button_validate()
+        self.assertEqual(delivery.state, "done")
+
+    def test_remove_view_lines_again(self):
+        """
+        Test that the removal of the lines taken from a view does nothing on a
+        database without such lines, and logs at WARNING the lines it removes with
+        their pickings
+        """
+        with self.assertNoLogs(level="WARNING"):
+            post_migration.remove_move_lines_on_views(self.env)
+        delivery = self._delivery("ou17-reserved")
+        legacy = post_migration.openupgrade.get_legacy_name("view_line")
+        self.env.cr.execute(
+            f"""
+            UPDATE stock_move_line
+            SET location_id = %s, quantity = 0, quantity_product_uom = 0,
+                {legacy} = TRUE
+            WHERE id IN %s
+            """,
+            (
+                self.env.ref("stock.warehouse0").view_location_id.id,
+                tuple(delivery.move_line_ids.ids),
+            ),
+        )
+        self.env.invalidate_all()
+        with self.assertLogs(level="WARNING") as logs:
+            post_migration.remove_move_lines_on_views(self.env)
+        self.assertIn(delivery.name, logs.output[0])
+        self.assertFalse(delivery.move_line_ids)
 
     def test_returned_picking(self):
         """

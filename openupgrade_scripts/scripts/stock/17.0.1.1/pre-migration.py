@@ -37,6 +37,47 @@ def fix_move_line_quantity(env):
     )
 
 
+def reset_move_line_quantity_on_views(env):
+    """
+    v16 allowed a quantity done on a line not done whose source is a view, as it
+    wasn't a reservation. In v17 that quantity is a reservation, held by a quant of
+    the source, and quants aren't allowed on views: writing, unlinking or validating
+    such a line would raise, and from v18 on so would stock.quant~_clean_reservations,
+    run by the inventory views and by the procurement scheduler. Unless a quant there
+    matches them (product, lot, package and owner), leave the lines of storable
+    products without quantity and mark them for post-migration, which removes them,
+    so that their moves are reserved again from other locations.
+    """
+    legacy = openupgrade.get_legacy_name("view_line")
+    openupgrade.logged_query(
+        env.cr, f"ALTER TABLE stock_move_line ADD COLUMN {legacy} BOOLEAN"
+    )
+    openupgrade.logged_query(
+        env.cr,
+        f"""
+        UPDATE stock_move_line sml
+        SET quantity = 0, {legacy} = TRUE
+        FROM stock_location sl, product_product pp, product_template pt
+        WHERE sl.id = sml.location_id
+            AND sl.usage = 'view'
+            AND pp.id = sml.product_id
+            AND pt.id = pp.product_tmpl_id
+            AND pt.type = 'product'
+            AND sml.state IN (
+                'draft', 'waiting', 'confirmed', 'partially_available', 'assigned'
+            )
+            AND NOT EXISTS (
+                SELECT 1 FROM stock_quant sq
+                WHERE sq.product_id = sml.product_id
+                    AND sq.location_id = sml.location_id
+                    AND sq.lot_id IS NOT DISTINCT FROM sml.lot_id
+                    AND sq.package_id IS NOT DISTINCT FROM sml.package_id
+                    AND sq.owner_id IS NOT DISTINCT FROM sml.owner_id
+            )
+        """,
+    )
+
+
 def _prefill_sml_quantity_product_uom(env):
     openupgrade.add_columns(
         env,
@@ -93,7 +134,11 @@ def prefill_picked(env):
         FROM stock_move sm
         WHERE sml.move_id = sm.id
           AND sm.state != 'done'
-          AND (sm.state = 'cancel' OR COALESCE(sml.qty_done, 0) = 0)
+          AND (
+              sm.state = 'cancel'
+              OR COALESCE(sml.qty_done, 0) = 0
+              OR COALESCE(sml.quantity, 0) = 0
+          )
         """,
     )
     openupgrade.logged_query(
@@ -131,5 +176,6 @@ def migrate(env, version):
     openupgrade.rename_fields(env, _field_renames)
     openupgrade.copy_columns(env.cr, _column_copies)
     fix_move_line_quantity(env)
+    reset_move_line_quantity_on_views(env)
     _prefill_sml_quantity_product_uom(env)
     prefill_picked(env)
