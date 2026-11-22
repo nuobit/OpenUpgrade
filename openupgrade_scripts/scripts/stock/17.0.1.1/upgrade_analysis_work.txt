@@ -53,7 +53,7 @@ stock        / stock.move.line          / quantity_product_uom (float)  : NEW is
 
 stock        / stock.move.line          / reserved_qty (float)          : DEL
 stock        / stock.move.line          / reserved_uom_qty (float)      : DEL required
-# DONE: added to quantity in pre-migration, recompute stock.move#quantity in post-migration
+# DONE: copied to quantity in pre-migration on the open lines without a quantity done, recompute stock.move#quantity and stock.move#state in post-migration
 
 
 stock        / stock.package.type       / height (integer)              : type is now 'float' ('integer')

@@ -15,23 +15,24 @@ _column_copies = {
 
 def fix_move_line_quantity(env):
     """
-    v17 combines what used to be reserved_qty and qty_done.
-    We assume that we shouldn't touch an original qty_done on
-    done moves, but that we can best reflect the v16 state of
-    lines being worked on by adding reserved_qty to the new
-    quantity column, which was qty_done in v16
+    v17 combines what used to be reserved_uom_qty and qty_done.
+    The new quantity column is a copy of qty_done, and we keep it
+    on the lines that had a quantity done, as that is what
+    validating their picking would move in v16. The open lines
+    that were only reserved take their reserved quantity.
 
-    In post-migration, we'll recompute the quantity field of
-    moves affected.
+    In post-migration, we'll recompute the quantity field and the
+    state of moves affected.
     """
     openupgrade.logged_query(
         env.cr,
         """
         UPDATE stock_move_line
-        SET quantity = quantity + reserved_qty
+        SET quantity = reserved_uom_qty
         WHERE
         state IN ('assigned', 'partially_available')
-        AND reserved_qty <> 0
+        AND reserved_uom_qty <> 0
+        AND COALESCE(qty_done, 0) = 0
         """,
     )
 

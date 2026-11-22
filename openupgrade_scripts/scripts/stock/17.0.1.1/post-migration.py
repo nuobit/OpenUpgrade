@@ -12,21 +12,33 @@ def _stock_scrap_convert_move_id_m2o_to_o2m(env):
     )
 
 
+def _without_tracking(env):
+    """
+    The states recomputed here are those the pickings already had, told in v17's
+    terms: no change to post in their chatter
+    """
+    return env(context=dict(env.context, mail_notrack=True))
+
+
 def fix_move_quantity(env):
     """
-    Recompute move quantity for move lines that have been changed in pre-migration
+    Recompute the quantity of the open moves whose lines changed in pre-migration,
+    as a line now holds its quantity done, or its reserved quantity when nothing
+    was done, and the state that follows from it.
     """
+    env = _without_tracking(env)
     env.cr.execute(
         """
         SELECT DISTINCT move_id FROM stock_move_line
-        WHERE
-        state IN ('assigned', 'partially_available')
-        AND reserved_qty <> 0
+        WHERE state IN ('waiting', 'confirmed', 'partially_available', 'assigned')
+            AND (reserved_uom_qty <> 0 OR qty_done <> 0)
         """
     )
     moves = env["stock.move"].browse(_id for (_id,) in env.cr.fetchall())
     env.add_to_compute(moves._fields["quantity"], moves)
     moves._recompute_recordset(["quantity"])
+    moves._recompute_state()
+    env.flush_all()
 
 
 def link_returned_pickings(env):
