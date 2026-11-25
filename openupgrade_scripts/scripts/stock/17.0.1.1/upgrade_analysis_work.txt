@@ -61,6 +61,7 @@ stock        / stock.move.line          / reserved_qty (float)          : DEL
 stock        / stock.move.line          / reserved_uom_qty (float)      : DEL required
 # DONE: copied to quantity in pre-migration on the open lines without a quantity done, recompute stock.move#quantity and stock.move#state in post-migration
 # DONE: a line not done of a storable product taken from a view location with no matching quant has its quantity removed in pre-migration and is itself removed in post-migration
+# DONE: stock.quant#reserved_quantity set to the quantity of the open lines taken from each quant in post-migration
 
 
 stock        / stock.package.type       / height (integer)              : type is now 'float' ('integer')

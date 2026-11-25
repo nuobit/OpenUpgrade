@@ -95,6 +95,64 @@ def remove_move_lines_on_views(env):
     env.flush_all()
 
 
+def reconcile_quant_reservations(env):
+    """
+    A v16 quant held the reserved quantities of the open lines taken from it, while
+    a v17 quant holds their quantity, which now is the quantity done when there was
+    one. Set each quant's reservation to the quantity of the open lines of storable
+    products taken from it, and to none at the locations that bypass reservation,
+    as stock.quant~_clean_reservations does from v18 on.
+    """
+    reserved_quants = env["stock.quant"]._read_group(
+        [("reserved_quantity", "!=", 0)],
+        ["product_id", "location_id", "lot_id", "package_id", "owner_id"],
+        ["reserved_quantity:sum", "id:recordset"],
+    )
+    reserved_move_lines = env["stock.move.line"]._read_group(
+        [
+            (
+                "state",
+                "in",
+                ["assigned", "partially_available", "waiting", "confirmed"],
+            ),
+            ("quantity_product_uom", "!=", 0),
+            ("product_id.type", "=", "product"),
+        ],
+        ["product_id", "location_id", "lot_id", "package_id", "owner_id"],
+        ["quantity_product_uom:sum"],
+    )
+    reserved_move_lines = {
+        (product, location, lot, package, owner): quantity
+        for product, location, lot, package, owner, quantity in reserved_move_lines
+    }
+    for product, location, lot, package, owner, reserved, quants in reserved_quants:
+        key = (product, location, lot, package, owner)
+        lines_quantity = reserved_move_lines.pop(key, 0)
+        if location.should_bypass_reservation():
+            lines_quantity = 0
+        rounding = product.uom_id.rounding
+        if float_compare(reserved, lines_quantity, precision_rounding=rounding):
+            quants._update_reserved_quantity(
+                product,
+                location,
+                lines_quantity - reserved,
+                lot_id=lot,
+                package_id=package,
+                owner_id=owner,
+            )
+    for key, quantity in reserved_move_lines.items():
+        product, location, lot, package, owner = key
+        if not location.should_bypass_reservation():
+            env["stock.quant"]._update_reserved_quantity(
+                product,
+                location,
+                quantity,
+                lot_id=lot,
+                package_id=package,
+                owner_id=owner,
+            )
+
+
 def link_returned_pickings(env):
     """
     Link pickings containing returned moves to the pickings containing the moves
@@ -153,5 +211,6 @@ def migrate(env, version):
     _stock_scrap_convert_move_id_m2o_to_o2m(env)
     fix_move_quantity(env)
     remove_move_lines_on_views(env)
+    reconcile_quant_reservations(env)
     link_returned_pickings(env)
     set_picking_type_return_location(env)

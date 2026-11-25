@@ -186,6 +186,22 @@ _to_view(_add_done_line(delivery, delivery.move_ids.product_id, 1, delivery.move
 delivery = _delivery("ou17-view-added", _product("OU17-VIEW-ADDED-BESIDE"), 1)
 delivery.action_assign()
 _to_view(_add_done_line(delivery, _product("OU17-VIEW-ADDED"), 1))
+# the same on a view holding a quant of the product left with nothing, as one
+# emptied before its location became a view
+delivery = _delivery("ou17-view-quant", _product("OU17-VIEW-QUANT"), 1)
+delivery.do_unreserve()
+line = _add_done_line(delivery, delivery.move_ids.product_id, 1, delivery.move_ids)
+_to_view(line)
+env.cr.execute(
+    """
+    INSERT INTO stock_quant (
+        product_id, location_id, company_id, quantity, reserved_quantity, in_date,
+        create_uid, create_date, write_uid, write_date
+    )
+    VALUES (%s, %s, %s, 0, 0, now(), 1, now(), 1, now())
+    """,
+    (line.product_id.id, view.id, view.company_id.id),
+)
 # a line of a lot, a package and an owner taken from a view, where the quants of the
 # product differ from it in one of the three each
 product = _product("OU17-VIEW-LOT", quantity=0, tracking="lot")
@@ -286,8 +302,9 @@ receipt = env["stock.picking"].create(
 receipt.action_confirm()
 receipt_move = receipt.move_ids
 _to_view(_add_done_line(receipt, _product("OU17-RECEIPT-VIEW-ADDED", quantity=0), 1))
-# a delivery in tonnes of that product, waiting for the receipt, with a line of 1 kg
-# done beside a line done on a view
+# deliveries in tonnes of that product, each with a line of 1 kg done, a quantity that
+# rounds to nothing in tonnes: one waiting for the receipt, beside a line done on a
+# view, and one confirmed
 tonne = env.ref("uom.product_uom_ton")
 delivery = _delivery(
     "ou17-small-waiting",
@@ -298,5 +315,47 @@ delivery = _delivery(
 )
 _add_done_line(delivery, counted, 1, delivery.move_ids)
 _to_view(_add_done_line(delivery, counted, 1, delivery.move_ids))
+delivery = _delivery("ou17-small-confirmed", counted, 1, uom=tonne)
+delivery.do_unreserve()
+_add_done_line(delivery, counted, 1, delivery.move_ids)
+# a reservation left on a quant where reservation is bypassed, the vendors' quant
+# of a product an open receipt takes from there
+receipt_move = env.ref("stock.incomming_shipment2").move_ids
+env.cr.execute(
+    """
+    INSERT INTO stock_quant (
+        product_id, location_id, company_id, quantity, reserved_quantity, in_date,
+        create_uid, create_date, write_uid, write_date
+    )
+    VALUES (%s, %s, %s, 0, 1, now(), 1, now(), 1, now())
+    """,
+    (
+        receipt_move.product_id.id,
+        receipt_move.location_id.id,
+        receipt_move.company_id.id,
+    ),
+)
+# lines done with nothing reserved of products counted in whole units, holding a
+# fraction of a unit: one below half a unit, at a quant that reserves nothing, and
+# one at a quant whose reservation was left below half a unit
+product = _product(
+    "OU17-WHOLE-FRACTION", uom_id=whole_units.id, uom_po_id=whole_units.id
+)
+delivery = _delivery("ou17-whole-fraction", product, 1)
+delivery.do_unreserve()
+_add_done_line(delivery, product, 0.3, delivery.move_ids)
+product = _product("OU17-WHOLE-STALE", uom_id=whole_units.id, uom_po_id=whole_units.id)
+delivery = _delivery("ou17-whole-stale", product, 2)
+delivery.do_unreserve()
+_add_done_line(delivery, product, 2, delivery.move_ids)
+env.cr.execute(
+    "UPDATE stock_quant SET reserved_quantity = 0.3 WHERE product_id = %s",
+    (product.id,),
+)
+# a consumable, whose lines reserve nothing on the quants
+consumable = env["product.product"].create(
+    {"name": "OU17-CONSUMABLE", "default_code": "OU17-CONSUMABLE", "type": "consu"}
+)
+_delivery("ou17-consumable", consumable, 1).action_assign()
 
 env.cr.commit()

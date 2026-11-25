@@ -1,5 +1,6 @@
 import importlib.util
 import os
+from collections import defaultdict
 
 from odoo.tests import TransactionCase
 
@@ -284,6 +285,97 @@ class TestStockMigration(TransactionCase):
             post_migration.remove_move_lines_on_views(self.env)
         self.assertIn(delivery.name, logs.output[0])
         self.assertFalse(delivery.move_line_ids)
+
+    def test_quant_reservations(self):
+        """
+        Test that the quants of each product, location, lot, package and owner
+        reserve the quantity of the open lines of storable products taken from
+        them, a fraction of a unit counted in whole units included, and nothing
+        where reservation is bypassed
+        """
+
+        def key(record):
+            return (
+                record.product_id,
+                record.location_id,
+                record.lot_id,
+                record.package_id,
+                record.owner_id,
+            )
+
+        reserved = defaultdict(float)
+        for quant in self.env["stock.quant"].search([]):
+            reserved[key(quant)] += quant.reserved_quantity
+        expected = defaultdict(float)
+        for line in self.env["stock.move.line"].search(
+            [
+                (
+                    "state",
+                    "in",
+                    ("assigned", "partially_available", "waiting", "confirmed"),
+                ),
+                ("product_id.type", "=", "product"),
+            ]
+        ):
+            if not line.location_id.should_bypass_reservation():
+                expected[key(line)] += line.quantity_product_uom
+        for group in set(reserved) | set(expected):
+            self.assertAlmostEqual(
+                reserved[group], expected[group], msg=group[0].display_name
+            )
+
+    def test_small_quantities_reserved(self):
+        """
+        Test that a line whose quantity rounds to nothing in its move's unit leaves
+        the move waiting or confirmed, and still reserves its quantity on the quant
+        """
+        stock = self.env.ref("stock.stock_location_stock")
+        for origin, state in (
+            ("ou17-small-waiting", "waiting"),
+            ("ou17-small-confirmed", "confirmed"),
+        ):
+            delivery = self._delivery(origin)
+            self.assertEqual(delivery.move_ids.state, state, origin)
+            self.assertEqual(delivery.move_line_ids.quantity, 1, origin)
+        quant = self.env["stock.quant"].search(
+            [
+                ("product_id.default_code", "=", "OU17-KILOGRAMS"),
+                ("location_id", "=", stock.id),
+            ]
+        )
+        self.assertEqual(quant.reserved_quantity, 2)
+
+    def test_validate_releases_reservations(self):
+        """
+        Test that validating a migrated picking leaves its quant with no reservation,
+        neither left behind nor below zero
+        """
+        for origin in (
+            "ou17-done-more",
+            "ou17-done-less",
+            "ou17-done-unreserved",
+            "ou17-whole-stale",
+        ):
+            delivery = self._delivery(origin)
+            delivery.with_context(
+                skip_backorder=True, picking_ids_not_to_backorder=delivery.ids
+            ).button_validate()
+            self.assertEqual(delivery.state, "done", origin)
+            quants = self.env["stock.quant"].search(
+                [("product_id", "=", delivery.move_ids.product_id.id)]
+            )
+            self.assertEqual(sum(quants.mapped("reserved_quantity")), 0, origin)
+
+    def test_view_quant_kept(self):
+        """
+        Test that a quant left with nothing on a view holds the reservation of the
+        line taken from it, so that the inventory keeps it and the line validates
+        """
+        delivery = self._delivery("ou17-view-quant")
+        self.assertEqual(delivery.move_line_ids.quantity, 1)
+        self.env["stock.quant"]._quant_tasks()
+        delivery.button_validate()
+        self.assertEqual(delivery.state, "done")
 
     def test_returned_picking(self):
         """
