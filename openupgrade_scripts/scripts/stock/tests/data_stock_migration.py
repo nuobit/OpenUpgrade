@@ -122,8 +122,18 @@ cancelled = delivery.move_ids.filtered(
 )
 cancelled.move_line_ids.qty_done = 1
 cancelled._action_cancel()
+# a move cancelled with nothing done, so without lines, beside a reserved one
+delivery = _delivery(
+    "ou17-cancelled-lineless",
+    _product("OU17-CANCELLED-LINELESS") | _product("OU17-BESIDE-CANCELLED-LINELESS"),
+    1,
+)
+delivery.action_assign()
+delivery.move_ids.filtered(
+    lambda move: move.product_id.default_code == "OU17-CANCELLED-LINELESS"
+)._action_cancel()
 # an inventory applied with no difference, whose move is done with a line of nothing
-# done
+# done, and a done move without lines, which no v16 flow makes but a database may hold
 quant = env["stock.quant"].search(
     [
         ("product_id", "=", _product("OU17-INVENTORY-EQUAL").id),
@@ -132,5 +142,10 @@ quant = env["stock.quant"].search(
 )
 quant.inventory_quantity = quant.quantity
 quant._apply_inventory()
+delivery = _delivery("ou17-done-lineless", _product("OU17-DONE-LINELESS"), 1)
+delivery.move_line_ids.qty_done = 1
+delivery.button_validate()
+env.flush_all()
+env.cr.execute("DELETE FROM stock_move_line WHERE picking_id = %s", (delivery.id,))
 
 env.cr.commit()

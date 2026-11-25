@@ -92,16 +92,18 @@ class TestStockMigration(TransactionCase):
         lines = delivery.move_line_ids.sorted("quantity")
         self.assertEqual(lines.mapped("picked"), [True, False])
         self.assertTrue(delivery.move_ids.picked)
-        cancelled = self._delivery("ou17-cancelled-done").move_ids.filtered(
-            lambda move: move.state == "cancel"
-        )
-        self.assertFalse(cancelled.picked)
-        self.assertFalse(cancelled.move_line_ids.picked)
+        for origin in ("ou17-cancelled-done", "ou17-cancelled-lineless"):
+            cancelled = self._delivery(origin).move_ids.filtered(
+                lambda move: move.state == "cancel"
+            )
+            self.assertFalse(cancelled.picked, origin)
+            self.assertFalse(any(cancelled.move_line_ids.mapped("picked")), origin)
 
     def test_done_moves_picked(self):
         """
         Test that a done move and its lines stay picked and keep their quantity, the
-        move of an inventory applied with no difference included
+        move of an inventory applied with no difference and a done move without lines
+        included
         """
         move = self.env["stock.move"].search(
             [
@@ -113,15 +115,21 @@ class TestStockMigration(TransactionCase):
         self.assertEqual(move.move_line_ids.quantity, 0)
         self.assertTrue(move.picked)
         self.assertTrue(move.move_line_ids.picked)
+        move = self._delivery("ou17-done-lineless").move_ids
+        self.assertEqual(move.state, "done")
+        self.assertEqual(move.quantity, 1)
+        self.assertFalse(move.move_line_ids)
+        self.assertTrue(move.picked)
 
     def test_validate_with_cancelled_moves(self):
         """
         Test that validating a picking where nothing was picked picks its open
         moves, whatever was done on its cancelled ones
         """
-        delivery = self._delivery("ou17-cancelled-done")
-        delivery.button_validate()
-        self.assertEqual(delivery.state, "done")
+        for origin in ("ou17-cancelled-done", "ou17-cancelled-lineless"):
+            delivery = self._delivery(origin)
+            delivery.button_validate()
+            self.assertEqual(delivery.state, "done", origin)
 
     def test_returned_picking(self):
         """

@@ -75,8 +75,8 @@ def prefill_picked(env):
     """
     Pre-fill picked for stock moves and move lines to reduce ORM
     recomputation during migration. On the moves not done nor cancelled, it
-    marks the lines that had a quantity done in v16. The lines of a cancelled
-    move aren't picked, as v17 unpicks a move it cancels.
+    marks the lines that had a quantity done in v16. A cancelled move and its
+    lines aren't picked, as v17 unpicks a move it cancels.
     """
     openupgrade.add_columns(
         env,
@@ -104,7 +104,7 @@ def prefill_picked(env):
         FROM stock_move sm2
         LEFT JOIN stock_move_line sml
             ON sml.move_id = sm2.id
-        WHERE sm.state NOT IN ('done', 'cancel')
+        WHERE sm.state != 'done'
             AND sml.id IS NULL
             AND sm.id = sm2.id
         """,
