@@ -42,7 +42,7 @@ account      / account.account          / internal_group (selection)    : not re
 account      / account.account          / internal_group (selection)    : now a function
 account      / account.account          / internal_group (selection)    : selection_keys is now '['asset', 'equity', 'expense', 'income', 'liability', 'off_balance']' ('function')
 account      / account.account          / internal_type (selection)     : DEL selection_keys: function
-# NOTHING TO DO: Logic unchanged
+# DONE: end-migration: the favourites (ir.filters) that use it, or account.move.line's account_internal_type, use account_type
 
 account      / account.account          / non_trade (boolean)           : NEW hasdefault: default
 # NOTHING TO DO: The most usual AR/AP is the non trade one
